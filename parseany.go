@@ -53,46 +53,47 @@ type dateState uint8
 type timeState uint8
 
 const (
-	dateStart dateState = iota // 0
-	dateDigit
-	dateDigitSt
-	dateYearDash
-	dateYearDashAlphaDash
-	dateYearDashDash
-	dateYearDashDashWs // 5
-	dateYearDashDashT
-	dateYearDashDashOffset
-	dateDigitDash
-	dateDigitDashAlpha
-	dateDigitDashAlphaDash // 10
-	dateDigitDot
-	dateDigitDotDot
-	dateDigitSlash
-	dateDigitYearSlash
-	dateDigitSlashAlpha // 15
-	dateDigitColon
-	dateDigitChineseYear
-	dateDigitChineseYearWs
-	dateDigitWs
-	dateDigitWsMoYear // 20
-	dateDigitWsMolong
-	dateAlpha
-	dateAlphaWs
-	dateAlphaWsDigit
-	dateAlphaWsDigitMore // 25
-	dateAlphaWsDigitMoreWs
-	dateAlphaWsDigitMoreWsYear
-	dateAlphaWsMonth
-	dateAlphaWsDigitYearmaybe
-	dateAlphaWsMonthMore
-	dateAlphaWsMonthSuffix
-	dateAlphaWsMore
-	dateAlphaWsAtTime
-	dateAlphaWsAlpha
-	dateAlphaWsAlphaYearmaybe // 35
-	dateAlphaPeriodWsDigit
-	dateWeekdayComma
-	dateWeekdayAbbrevComma
+	dateStart                  dateState = iota // 0
+	dateDigit                                   // 1
+	dateDigitSt                                 // 2
+	dateYearDash                                // 3
+	dateYearDashAlphaDash                       // 4
+	dateYearDashDash                            // 5
+	dateYearDashDashWs                          // 6
+	dateYearDashDashT                           // 7
+	dateYearDashDashOffset                      // 8
+	dateDigitDash                               // 9
+	dateDigitDashAlpha                          // 10
+	dateDigitDashAlphaDash                      // 11
+	dateDigitDot                                // 12
+	dateDigitDotDot                             // 13
+	dateDigitYearDot                            // 14
+	dateDigitSlash                              // 15
+	dateDigitYearSlash                          // 16
+	dateDigitSlashAlpha                         // 17
+	dateDigitColon                              // 18
+	dateDigitChineseYear                        // 19
+	dateDigitChineseYearWs                      // 20
+	dateDigitWs                                 // 21
+	dateDigitWsMoYear                           // 22
+	dateDigitWsMolong                           // 23
+	dateAlpha                                   // 24
+	dateAlphaWs                                 // 25
+	dateAlphaWsDigit                            // 26
+	dateAlphaWsDigitMore                        // 27
+	dateAlphaWsDigitMoreWs                      // 28
+	dateAlphaWsDigitMoreWsYear                  // 29
+	dateAlphaWsMonth                            // 30
+	dateAlphaWsDigitYearmaybe                   // 31
+	dateAlphaWsMonthMore                        // 32
+	dateAlphaWsMonthSuffix                      // 33
+	dateAlphaWsMore                             // 34
+	dateAlphaWsAtTime                           // 35
+	dateAlphaWsAlpha                            // 36
+	dateAlphaWsAlphaYearmaybe                   // 37
+	dateAlphaPeriodWsDigit                      // 38
+	dateWeekdayComma                            // 39
+	dateWeekdayAbbrevComma                      // 40
 )
 const (
 	// Time state
@@ -170,15 +171,14 @@ func ParseIn(datestr string, loc *time.Location, opts ...ParserOption) (time.Tim
 // Set Location to time.Local.  Same as ParseIn Location but lazily uses
 // the global time.Local variable for Location argument.
 //
-//     denverLoc, _ := time.LoadLocation("America/Denver")
-//     time.Local = denverLoc
+//	denverLoc, _ := time.LoadLocation("America/Denver")
+//	time.Local = denverLoc
 //
-//     t, err := dateparse.ParseLocal("3/1/2014")
+//	t, err := dateparse.ParseLocal("3/1/2014")
 //
 // Equivalent to:
 //
-//     t, err := dateparse.ParseIn("3/1/2014", denverLoc)
-//
+//	t, err := dateparse.ParseIn("3/1/2014", denverLoc)
 func ParseLocal(datestr string, opts ...ParserOption) (time.Time, error) {
 	p, err := parseTime(datestr, time.Local, opts...)
 	if err != nil {
@@ -204,9 +204,8 @@ func MustParse(datestr string, opts ...ParserOption) time.Time {
 // ParseFormat parse's an unknown date-time string and returns a layout
 // string that can parse this (and exact same format) other date-time strings.
 //
-//     layout, err := dateparse.ParseFormat("2013-02-01 00:00:00")
-//     // layout = "2006-01-02 15:04:05"
-//
+//	layout, err := dateparse.ParseFormat("2013-02-01 00:00:00")
+//	// layout = "2006-01-02 15:04:05"
 func ParseFormat(datestr string, opts ...ParserOption) (string, error) {
 	p, err := parseTime(datestr, nil, opts...)
 	if err != nil {
@@ -372,12 +371,22 @@ iterRunes:
 					p.yearlen = i
 					p.moi = i + 1
 					p.setYear()
+					p.stateDate = dateDigitYearDot // to handle yyyy.mm.dd or yyyy.mm
 				} else {
 					p.ambiguousMD = true
-					p.moi = 0
-					p.molen = i
-					p.setMonth()
-					p.dayi = i + 1
+					if p.preferMonthFirst {
+						if p.molen == 0 {
+							p.molen = i
+							p.setMonth()
+							p.dayi = i + 1
+						}
+					} else {
+						if p.daylen == 0 {
+							p.daylen = i
+							p.setDay()
+							p.moi = i + 1
+						}
+					}
 				}
 
 			case ' ':
@@ -719,24 +728,51 @@ iterRunes:
 			// 08.21.71
 			// 2014.05
 			// 2018.09.30
-			if r == '.' {
-				if p.moi == 0 {
-					// 3.31.2014
-					p.daylen = i - p.dayi
-					p.yeari = i + 1
-					p.setDay()
-					p.stateDate = dateDigitDotDot
+			switch r {
+			case '.':
+				// This is the 2nd . so now we should know start pts of all of the dd, mm, yy
+				if p.preferMonthFirst {
+					if p.daylen == 0 {
+						p.daylen = i - p.dayi
+						p.setDay()
+						p.yeari = i + 1
+					}
 				} else {
-					// 2018.09.30
-					//p.molen = 2
-					p.molen = i - p.moi
-					p.dayi = i + 1
-					p.setMonth()
-					p.stateDate = dateDigitDotDot
+					if p.molen == 0 {
+						p.molen = i - p.moi
+						p.setMonth()
+						p.yeari = i + 1
+					}
 				}
+				p.stateDate = dateDigitDotDot
+				// Note no break, we are going to pass by and re-enter this dateDigitSlash
+				// and look for ending (space) or not (just date)
+			case ' ':
+				p.stateTime = timeStart
+				if p.yearlen == 0 {
+					p.yearlen = i - p.yeari
+					p.setYear()
+				}
+				break iterRunes
 			}
 		case dateDigitDotDot:
 			// iterate all the way through
+		case dateDigitYearDot:
+			switch r {
+			case ' ', ':':
+				p.stateTime = timeStart
+				if p.daylen == 0 {
+					p.daylen = i - p.dayi
+					p.setDay()
+				}
+				break iterRunes
+			case '.':
+				if p.molen == 0 {
+					p.molen = i - p.moi
+					p.setMonth()
+					p.dayi = i + 1
+				}
+			}
 		case dateAlpha:
 			// dateAlphaWS
 			//  Mon Jan _2 15:04:05 2006
@@ -1919,6 +1955,10 @@ iterRunes:
 
 	case dateDigitYearSlash:
 		// 2014/10/13
+		return p, nil
+
+	case dateDigitYearDot:
+		// 2014.10.13
 		return p, nil
 
 	case dateDigitColon:

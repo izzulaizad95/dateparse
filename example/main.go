@@ -154,7 +154,8 @@ func main() {
 
 	table.AddHeaders("Input", "Parsed, and Output as %v")
 	for _, dateExample := range examples {
-		t, err := dateparse.ParseLocal(dateExample)
+		t, err := dateparse.ParseIn(dateExample, time.Local, dateparse.PreferMonthFirst(false), dateparse.RetryAmbiguousDateWithSwap(true))
+
 		if err != nil {
 			panic(err.Error())
 		}
